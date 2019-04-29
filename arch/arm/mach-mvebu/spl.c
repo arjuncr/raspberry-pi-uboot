@@ -13,8 +13,6 @@
 #include <asm/arch/cpu.h>
 #include <asm/arch/soc.h>
 
-DECLARE_GLOBAL_DATA_PTR;
-
 static u32 get_boot_device(void)
 {
 	u32 val;
@@ -44,6 +42,9 @@ static u32 get_boot_device(void)
 		return BOOT_DEVICE_MMC1;
 #endif
 	case BOOT_FROM_UART:
+#ifdef BOOT_FROM_UART_ALT
+	case BOOT_FROM_UART_ALT:
+#endif
 		return BOOT_DEVICE_UART;
 	case BOOT_FROM_SPI:
 	default:

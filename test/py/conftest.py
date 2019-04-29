@@ -298,6 +298,32 @@ def pytest_generate_tests(metafunc):
             continue
         generate_config(metafunc, fn)
 
+@pytest.fixture(scope='session')
+def u_boot_log(request):
+     """Generate the value of a test's log fixture.
+
+     Args:
+         request: The pytest request.
+
+     Returns:
+         The fixture value.
+     """
+
+     return console.log
+
+@pytest.fixture(scope='session')
+def u_boot_config(request):
+     """Generate the value of a test's u_boot_config fixture.
+
+     Args:
+         request: The pytest request.
+
+     Returns:
+         The fixture value.
+     """
+
+     return console.config
+
 @pytest.fixture(scope='function')
 def u_boot_console(request):
     """Generate the value of a test's u_boot_console fixture.
@@ -403,12 +429,12 @@ def setup_boardspec(item):
     for board in mark.args:
         if board.startswith('!'):
             if ubconfig.board_type == board[1:]:
-                pytest.skip('board not supported')
+                pytest.skip('board "%s" not supported' % ubconfig.board_type)
                 return
         else:
             required_boards.append(board)
     if required_boards and ubconfig.board_type not in required_boards:
-        pytest.skip('board not supported')
+        pytest.skip('board "%s" not supported' % ubconfig.board_type)
 
 def setup_buildconfigspec(item):
     """Process any 'buildconfigspec' marker for a test.
@@ -429,7 +455,38 @@ def setup_buildconfigspec(item):
         return
     for option in mark.args:
         if not ubconfig.buildconfig.get('config_' + option.lower(), None):
-            pytest.skip('.config feature not enabled')
+            pytest.skip('.config feature "%s" not enabled' % option.lower())
+
+def tool_is_in_path(tool):
+    for path in os.environ["PATH"].split(os.pathsep):
+        fn = os.path.join(path, tool)
+        if os.path.isfile(fn) and os.access(fn, os.X_OK):
+            return True
+    return False
+
+def setup_requiredtool(item):
+    """Process any 'requiredtool' marker for a test.
+
+    Such a marker lists some external tool (binary, executable, application)
+    that the test requires. If tests are being executed on a system that
+    doesn't have the required tool, the test is marked to be skipped.
+
+    Args:
+        item: The pytest test item.
+
+    Returns:
+        Nothing.
+    """
+
+    mark = item.get_marker('requiredtool')
+    if not mark:
+        return
+    for tool in mark.args:
+        if not tool_is_in_path(tool):
+            pytest.skip('tool "%s" not in $PATH' % tool)
+
+def start_test_section(item):
+    anchors[item.name] = log.start_section(item.name)
 
 def pytest_runtest_setup(item):
     """pytest hook: Configure (set up) a test item.
@@ -444,9 +501,10 @@ def pytest_runtest_setup(item):
         Nothing.
     """
 
-    anchors[item.name] = log.start_section(item.name)
+    start_test_section(item)
     setup_boardspec(item)
     setup_buildconfigspec(item)
+    setup_requiredtool(item)
 
 def pytest_runtest_protocol(item, nextitem):
     """pytest hook: Called to execute a test.
@@ -463,6 +521,14 @@ def pytest_runtest_protocol(item, nextitem):
     """
 
     reports = runtestprotocol(item, nextitem=nextitem)
+
+    # In pytest 3, runtestprotocol() may not call pytest_runtest_setup() if
+    # the test is skipped. That call is required to create the test's section
+    # in the log file. The call to log.end_section() requires that the log
+    # contain a section for this test. Create a section for the test if it
+    # doesn't already exist.
+    if not item.name in anchors:
+        start_test_section(item)
 
     failure_cleanup = False
     test_list = tests_passed

@@ -17,9 +17,6 @@
 #define CONFIG_SYS_LITTLE_ENDIAN
 #define CONFIG_MACH_TYPE		4273
 
-/* CMD */
-#define CONFIG_CMD_MTDPARTS
-
 /* MMC */
 #define CONFIG_SYS_FSL_USDHC_NUM	3
 #define CONFIG_SYS_FSL_ESDHC_ADDR	USDHC2_BASE_ADDR
@@ -41,12 +38,7 @@
 /* Serial console */
 #define CONFIG_MXC_UART
 #define CONFIG_MXC_UART_BASE		UART4_BASE
-#define CONFIG_BAUDRATE			115200
 #define CONFIG_SYS_BAUDRATE_TABLE	{9600, 19200, 38400, 57600, 115200}
-
-/* Shell */
-#define CONFIG_SYS_PBSIZE	(CONFIG_SYS_CBSIZE + \
-					sizeof(CONFIG_SYS_PROMPT) + 16)
 
 /* SPI flash */
 #define CONFIG_SF_DEFAULT_BUS		0
@@ -56,20 +48,12 @@
 
 /* MTD support */
 #ifndef CONFIG_SPL_BUILD
-#define CONFIG_FDT_FIXUP_PARTITIONS
 #define CONFIG_MTD_DEVICE
 #define CONFIG_MTD_PARTITIONS
 #define CONFIG_SPI_FLASH_MTD
 #endif
 
-#define MTDIDS_DEFAULT		"nor0=spi0.0"
-#define MTDPARTS_DEFAULT	"mtdparts=spi0.0:" \
-				"768k(uboot)," \
-				"256k(uboot-environment)," \
-				"-(reserved)"
-
 /* Environment */
-#define CONFIG_ENV_IS_IN_SPI_FLASH
 #define CONFIG_ENV_SPI_MAX_HZ		CONFIG_SF_DEFAULT_SPEED
 #define CONFIG_ENV_SPI_MODE		CONFIG_SF_DEFAULT_MODE
 #define CONFIG_ENV_SPI_BUS		CONFIG_SF_DEFAULT_BUS
@@ -98,8 +82,8 @@
 	"video_dvi=mxcfb0:dev=dvi,1280x800M-32@50,if=RGB32\0" \
 	"doboot=bootm ${loadaddr}\0" \
 	"doloadfdt=false\0" \
-	"mtdids=" MTDIDS_DEFAULT "\0" \
-	"mtdparts=" MTDPARTS_DEFAULT "\0" \
+	"mtdids=" CONFIG_MTDIDS_DEFAULT "\0" \
+	"mtdparts=" CONFIG_MTDPARTS_DEFAULT "\0" \
 	"setboottypez=setenv kernel ${zImage};" \
 		"setenv doboot bootz ${loadaddr} - ${fdtaddr};" \
 		"setenv doloadfdt true;\0" \
@@ -182,7 +166,6 @@
 
 /* NAND */
 #ifndef CONFIG_SPL_BUILD
-#define CONFIG_CMD_NAND
 #define CONFIG_SYS_NAND_BASE		0x40000000
 #define CONFIG_SYS_NAND_MAX_CHIPS	1
 #define CONFIG_SYS_MAX_NAND_DEVICE	1
@@ -199,7 +182,6 @@
 #define CONFIG_FEC_MXC_PHYADDR		0
 #define CONFIG_FEC_XCV_TYPE		RGMII
 #define IMX_FEC_BASE			ENET_BASE_ADDR
-#define CONFIG_PHYLIB
 #define CONFIG_PHY_ATHEROS
 #define CONFIG_MII
 #define CONFIG_ETHPRIME			"FEC0"
@@ -211,7 +193,6 @@
 #define CONFIG_MXC_USB_FLAGS		0
 #define CONFIG_USB_MAX_CONTROLLER_COUNT	2
 #define CONFIG_EHCI_HCD_INIT_AFTER_RESET	/* For OTG port */
-#define CONFIG_SYS_STDIO_DEREGISTER
 
 /* I2C */
 #define CONFIG_SYS_I2C
@@ -227,7 +208,6 @@
 #define CONFIG_SYS_I2C_EEPROM_BUS	2
 
 /* SATA */
-#define CONFIG_CMD_SATA
 #define CONFIG_SYS_SATA_MAX_DEVICE	1
 #define CONFIG_LIBATA
 #define CONFIG_LBA48
@@ -240,49 +220,30 @@
 #define CONFIG_SERIAL_TAG
 
 /* misc */
-#define CONFIG_STACKSIZE			(128 * 1024)
 #define CONFIG_SYS_MALLOC_LEN			(10 * 1024 * 1024)
-#define CONFIG_SYS_U_BOOT_MAX_SIZE_SECTORS	800 /* 400 KB */
 #define CONFIG_MISC_INIT_R
 
 /* SPL */
 #include "imx6_spl.h"
-#define CONFIG_SPL_MMC_SUPPORT
-#define CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR	0x80 /* offset 64 kb */
-#define CONFIG_SYS_MONITOR_LEN	(CONFIG_SYS_U_BOOT_MAX_SIZE_SECTORS / 2 * 1024)
-#define CONFIG_SPL_SPI_SUPPORT
-#define CONFIG_SPL_SPI_FLASH_SUPPORT
 #define CONFIG_SYS_SPI_U_BOOT_OFFS	(64 * 1024)
 #define CONFIG_SPL_SPI_LOAD
 
 /* Display */
-#define CONFIG_VIDEO
 #define CONFIG_VIDEO_IPUV3
-#define CONFIG_IPUV3_CLK          260000000
 #define CONFIG_IMX_HDMI
-#define CONFIG_CFB_CONSOLE
-#define CONFIG_VGA_AS_SINGLE_DEVICE
-#define CONFIG_SYS_CONSOLE_IS_IN_ENV
-#define CONFIG_CONSOLE_MUX
-#define CONFIG_VIDEO_SW_CURSOR
 
 #define CONFIG_SPLASH_SCREEN
 #define CONFIG_SPLASH_SOURCE
-#define CONFIG_CMD_BMP
 #define CONFIG_VIDEO_BMP_RLE8
 
 #define CONFIG_VIDEO_LOGO
 #define CONFIG_VIDEO_BMP_LOGO
 
 /* EEPROM */
-#define CONFIG_CMD_EEPROM
 #define CONFIG_ENV_EEPROM_IS_ON_I2C
 #define CONFIG_SYS_I2C_EEPROM_ADDR_LEN		1
 #define CONFIG_SYS_EEPROM_PAGE_WRITE_BITS	4
 #define CONFIG_SYS_EEPROM_PAGE_WRITE_DELAY_MS	5
 #define CONFIG_SYS_EEPROM_SIZE			256
-
-#define CONFIG_CMD_EEPROM_LAYOUT
-#define CONFIG_EEPROM_LAYOUT_HELP_STRING "v2, v3"
 
 #endif	/* __CONFIG_CM_FX6_H */

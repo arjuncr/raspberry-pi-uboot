@@ -27,10 +27,12 @@ typedef phys_size_t fdt_size_t;
 #define FDT_ADDR_T_NONE (-1ULL)
 #define fdt_addr_to_cpu(reg) be64_to_cpu(reg)
 #define fdt_size_to_cpu(reg) be64_to_cpu(reg)
+typedef fdt64_t fdt_val_t;
 #else
 #define FDT_ADDR_T_NONE (-1U)
 #define fdt_addr_to_cpu(reg) be32_to_cpu(reg)
 #define fdt_size_to_cpu(reg) be32_to_cpu(reg)
+typedef fdt32_t fdt_val_t;
 #endif
 
 /* Information obtained about memory from the FDT */
@@ -119,12 +121,6 @@ enum fdt_compat_id {
 	COMPAT_NVIDIA_TEGRA20_EMC,	/* Tegra20 memory controller */
 	COMPAT_NVIDIA_TEGRA20_EMC_TABLE, /* Tegra20 memory timing table */
 	COMPAT_NVIDIA_TEGRA20_NAND,	/* Tegra2 NAND controller */
-	COMPAT_NVIDIA_TEGRA124_PMC,	/* Tegra 124 power mgmt controller */
-	COMPAT_NVIDIA_TEGRA186_SDMMC,	/* Tegra186 SDMMC controller */
-	COMPAT_NVIDIA_TEGRA210_SDMMC,	/* Tegra210 SDMMC controller */
-	COMPAT_NVIDIA_TEGRA124_SDMMC,	/* Tegra124 SDMMC controller */
-	COMPAT_NVIDIA_TEGRA30_SDMMC,	/* Tegra30 SDMMC controller */
-	COMPAT_NVIDIA_TEGRA20_SDMMC,	/* Tegra20 SDMMC controller */
 	COMPAT_NVIDIA_TEGRA124_XUSB_PADCTL,
 					/* Tegra124 XUSB pad controller */
 	COMPAT_NVIDIA_TEGRA210_XUSB_PADCTL,
@@ -148,7 +144,6 @@ enum fdt_compat_id {
 	COMPAT_INTEL_MICROCODE,		/* Intel microcode update */
 	COMPAT_AMS_AS3722,		/* AMS AS3722 PMIC */
 	COMPAT_INTEL_QRK_MRC,		/* Intel Quark MRC */
-	COMPAT_SOCIONEXT_XHCI,		/* Socionext UniPhier xHCI */
 	COMPAT_ALTERA_SOCFPGA_DWMAC,	/* SoCFPGA Ethernet controller */
 	COMPAT_ALTERA_SOCFPGA_DWMMC,	/* SoCFPGA DWMMC controller */
 	COMPAT_ALTERA_SOCFPGA_DWC2USB,	/* SoCFPGA DWC2 USB controller */
@@ -156,6 +151,14 @@ enum fdt_compat_id {
 	COMPAT_INTEL_BAYTRAIL_FSP_MDP,	/* Intel FSP memory-down params */
 	COMPAT_INTEL_IVYBRIDGE_FSP,	/* Intel Ivy Bridge FSP */
 	COMPAT_SUNXI_NAND,		/* SUNXI NAND controller */
+	COMPAT_ALTERA_SOCFPGA_CLK,	/* SoCFPGA Clock initialization */
+	COMPAT_ALTERA_SOCFPGA_PINCTRL_SINGLE,	/* SoCFPGA pinctrl-single */
+	COMPAT_ALTERA_SOCFPGA_H2F_BRG,          /* SoCFPGA hps2fpga bridge */
+	COMPAT_ALTERA_SOCFPGA_LWH2F_BRG,        /* SoCFPGA lwhps2fpga bridge */
+	COMPAT_ALTERA_SOCFPGA_F2H_BRG,          /* SoCFPGA fpga2hps bridge */
+	COMPAT_ALTERA_SOCFPGA_F2SDR0,           /* SoCFPGA fpga2SDRAM0 bridge */
+	COMPAT_ALTERA_SOCFPGA_F2SDR1,           /* SoCFPGA fpga2SDRAM1 bridge */
+	COMPAT_ALTERA_SOCFPGA_F2SDR2,           /* SoCFPGA fpga2SDRAM2 bridge */
 
 	COMPAT_COUNT,
 };
@@ -808,40 +811,6 @@ const u8 *fdtdec_locate_byte_array(const void *blob, int node,
 int fdtdec_decode_region(const void *blob, int node, const char *prop_name,
 			 fdt_addr_t *basep, fdt_size_t *sizep);
 
-enum fmap_compress_t {
-	FMAP_COMPRESS_NONE,
-	FMAP_COMPRESS_LZO,
-};
-
-enum fmap_hash_t {
-	FMAP_HASH_NONE,
-	FMAP_HASH_SHA1,
-	FMAP_HASH_SHA256,
-};
-
-/* A flash map entry, containing an offset and length */
-struct fmap_entry {
-	uint32_t offset;
-	uint32_t length;
-	uint32_t used;			/* Number of bytes used in region */
-	enum fmap_compress_t compress_algo;	/* Compression type */
-	enum fmap_hash_t hash_algo;		/* Hash algorithm */
-	const uint8_t *hash;			/* Hash value */
-	int hash_size;				/* Hash size */
-};
-
-/**
- * Read a flash entry from the fdt
- *
- * @param blob		FDT blob
- * @param node		Offset of node to read
- * @param name		Name of node being read
- * @param entry		Place to put offset and size of this node
- * @return 0 if ok, -ve on error
- */
-int fdtdec_read_fmap_entry(const void *blob, int node, const char *name,
-			   struct fmap_entry *entry);
-
 /**
  * Obtain an indexed resource from a device property.
  *
@@ -960,6 +929,7 @@ struct display_timing {
 	struct timing_entry vsync_len;		/* ver. sync len */
 
 	enum display_flags flags;		/* display flags */
+	bool hdmi_monitor;			/* is hdmi monitor? */
 };
 
 /**
@@ -977,9 +947,49 @@ struct display_timing {
  */
 int fdtdec_decode_display_timing(const void *blob, int node, int index,
 				 struct display_timing *config);
+
+/**
+ * fdtdec_setup_memory_size() - decode and setup gd->ram_size
+ *
+ * Decode the /memory 'reg' property to determine the size of the first memory
+ * bank, populate the global data with the size of the first bank of memory.
+ *
+ * This function should be called from a boards dram_init(). This helper
+ * function allows for boards to query the device tree for DRAM size instead of
+ * hard coding the value in the case where the memory size cannot be detected
+ * automatically.
+ *
+ * @return 0 if OK, -EINVAL if the /memory node or reg property is missing or
+ * invalid
+ */
+int fdtdec_setup_memory_size(void);
+
+/**
+ * fdtdec_setup_memory_banksize() - decode and populate gd->bd->bi_dram
+ *
+ * Decode the /memory 'reg' property to determine the address and size of the
+ * memory banks. Use this data to populate the global data board info with the
+ * phys address and size of memory banks.
+ *
+ * This function should be called from a boards dram_init_banksize(). This
+ * helper function allows for boards to query the device tree for memory bank
+ * information instead of hard coding the information in cases where it cannot
+ * be detected automatically.
+ *
+ * @return 0 if OK, -EINVAL if the /memory node or reg property is missing or
+ * invalid
+ */
+int fdtdec_setup_memory_banksize(void);
+
 /**
  * Set up the device tree ready for use
  */
 int fdtdec_setup(void);
+
+/**
+ * Board-specific FDT initialization. Returns the address to a device tree blob.
+ * Called when CONFIG_OF_BOARD is defined.
+ */
+void *board_fdt_blob_setup(void);
 
 #endif

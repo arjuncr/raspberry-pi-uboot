@@ -26,8 +26,6 @@
 
 #define CONFIG_PREBOOT			"run cfgscr; run brdefaultip"
 
-#define CONFIG_BOARD_LATE_INIT
-
 /* Network defines */
 #define CONFIG_BOOTP_DNS		/* Configurable parts of CMD_DHCP */
 #define CONFIG_BOOTP_SEND_HOSTNAME
@@ -39,10 +37,7 @@
 #define CONFIG_NETCONSOLE		1
 #define CONFIG_BOOTP_MAY_FAIL		/* if we don't have DHCP environment */
 
-#define CONFIG_SYS_CONSOLE_INFO_QUIET
 #define CONFIG_ENV_OVERWRITE		/* Overwrite ethaddr / serial# */
-#define CONFIG_SYS_CONSOLE_IS_IN_ENV
-#define CONFIG_SYS_CONSOLE_OVERWRITE_ROUTINE
 
 /* As stated above, the following choices are optional. */
 #define CONFIG_SYS_LONGHELP
@@ -54,10 +49,5 @@
 
 /* Console I/O Buffer Size */
 #define CONFIG_SYS_CBSIZE		512
-/* Print Buffer Size */
-#define CONFIG_SYS_PBSIZE		(CONFIG_SYS_CBSIZE +\
-					sizeof(CONFIG_SYS_PROMPT) + 16)
-/* Boot Argument Buffer Size */
-#define CONFIG_SYS_BARGSIZE		CONFIG_SYS_CBSIZE
 
 #endif	/* __BUR_CFG_COMMON_H__ */

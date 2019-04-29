@@ -95,3 +95,17 @@ UCLASS_DRIVER(syscon) = {
 	.per_device_auto_alloc_size = sizeof(struct syscon_uc_info),
 	.pre_probe = syscon_pre_probe,
 };
+
+static const struct udevice_id generic_syscon_ids[] = {
+	{ .compatible = "syscon" },
+	{ }
+};
+
+U_BOOT_DRIVER(generic_syscon) = {
+	.name	= "syscon",
+	.id	= UCLASS_SYSCON,
+#if !CONFIG_IS_ENABLED(OF_PLATDATA)
+	.bind           = dm_scan_fdt_dev,
+#endif
+	.of_match = generic_syscon_ids,
+};

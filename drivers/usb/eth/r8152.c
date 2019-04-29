@@ -9,6 +9,7 @@
 #include <dm.h>
 #include <errno.h>
 #include <malloc.h>
+#include <memalign.h>
 #include <usb.h>
 #include <usb/lin_gadget_compat.h>
 #include <linux/mii.h>
@@ -25,7 +26,7 @@ struct r8152_dongle {
 	unsigned short product;
 };
 
-static const struct r8152_dongle const r8152_dongles[] = {
+static const struct r8152_dongle r8152_dongles[] = {
 	/* Realtek */
 	{ 0x0bda, 0x8050 },
 	{ 0x0bda, 0x8152 },
@@ -58,7 +59,7 @@ struct r8152_version {
 	bool           gmii;
 };
 
-static const struct r8152_version const r8152_versions[] = {
+static const struct r8152_version r8152_versions[] = {
 	{ 0x4c00, RTL_VER_01, 0 },
 	{ 0x4c10, RTL_VER_02, 0 },
 	{ 0x5c00, RTL_VER_03, 1 },
@@ -71,17 +72,25 @@ static const struct r8152_version const r8152_versions[] = {
 static
 int get_registers(struct r8152 *tp, u16 value, u16 index, u16 size, void *data)
 {
-	return usb_control_msg(tp->udev, usb_rcvctrlpipe(tp->udev, 0),
-			       RTL8152_REQ_GET_REGS, RTL8152_REQT_READ,
-			       value, index, data, size, 500);
+	ALLOC_CACHE_ALIGN_BUFFER(void *, tmp, size);
+	int ret;
+
+	ret = usb_control_msg(tp->udev, usb_rcvctrlpipe(tp->udev, 0),
+		RTL8152_REQ_GET_REGS, RTL8152_REQT_READ,
+		value, index, tmp, size, 500);
+	memcpy(data, tmp, size);
+	return ret;
 }
 
 static
 int set_registers(struct r8152 *tp, u16 value, u16 index, u16 size, void *data)
 {
+	ALLOC_CACHE_ALIGN_BUFFER(void *, tmp, size);
+
+	memcpy(tmp, data, size);
 	return usb_control_msg(tp->udev, usb_sndctrlpipe(tp->udev, 0),
 			       RTL8152_REQ_SET_REGS, RTL8152_REQT_WRITE,
-			       value, index, data, size, 500);
+			       value, index, tmp, size, 500);
 }
 
 int generic_ocp_read(struct r8152 *tp, u16 index, u16 size,
@@ -1216,7 +1225,8 @@ static int r8152_send_common(struct ueth_data *ueth, void *packet, int length)
 	u32 opts1, opts2 = 0;
 	int err;
 	int actual_len;
-	unsigned char msg[PKTSIZE + sizeof(struct tx_desc)];
+	ALLOC_CACHE_ALIGN_BUFFER(uint8_t, msg,
+				 PKTSIZE + sizeof(struct tx_desc));
 	struct tx_desc *tx_desc = (struct tx_desc *)msg;
 
 	debug("** %s(), len %d\n", __func__, length);
@@ -1257,7 +1267,7 @@ static int r8152_recv(struct eth_device *eth)
 {
 	struct ueth_data *dev = (struct ueth_data *)eth->priv;
 
-	static unsigned char  recv_buf[RTL8152_AGG_BUF_SZ];
+	ALLOC_CACHE_ALIGN_BUFFER(uint8_t, recv_buf, RTL8152_AGG_BUF_SZ);
 	unsigned char *pkt_ptr;
 	int err;
 	int actual_len;

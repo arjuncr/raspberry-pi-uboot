@@ -16,7 +16,7 @@
 
 int fdt_setprop_inplace_namelen_partial(void *fdt, int nodeoffset,
 					const char *name, int namelen,
-					uint32_t index, const void *val,
+					uint32_t idx, const void *val,
 					int len)
 {
 	void *propval;
@@ -27,10 +27,10 @@ int fdt_setprop_inplace_namelen_partial(void *fdt, int nodeoffset,
 	if (!propval)
 		return proplen;
 
-	if (proplen < (len + index))
+	if (proplen < (len + idx))
 		return -FDT_ERR_NOSPACE;
 
-	memcpy(propval + index, val, len);
+	memcpy((char *)propval + idx, val, len);
 	return 0;
 }
 
@@ -115,7 +115,7 @@ int fdt_find_regions(const void *fdt, char * const inc[], int inc_count,
 		     struct fdt_region region[], int max_regions,
 		     char *path, int path_len, int add_string_tab)
 {
-	int stack[FDT_MAX_DEPTH];
+	int stack[FDT_MAX_DEPTH] = { 0 };
 	char *end;
 	int nextoffset = 0;
 	uint32_t tag;

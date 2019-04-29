@@ -17,12 +17,17 @@
 
 DECLARE_GLOBAL_DATA_PTR;
 
+int arch_fixup_fdt(void *blob)
+{
+	return 0;
+}
+
 int do_bootm_linux(int flag, int argc, char * const argv[],
 		   bootm_headers_t *images)
 {
 	/* First parameter is mapped to $r5 for kernel boot args */
 	void	(*thekernel) (char *, ulong, ulong);
-	char	*commandline = getenv("bootargs");
+	char	*commandline = env_get("bootargs");
 	ulong	rd_data_start, rd_data_end;
 
 	/*

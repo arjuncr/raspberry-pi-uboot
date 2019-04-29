@@ -66,7 +66,6 @@
 # define CONFIG_SYS_MONITOR_LEN		0x00040000	/* 256KB */
 #endif
 
-#define CONFIG_SYS_STACKSIZE		(512 << 10)	/* stack 512KB */
 #define CONFIG_SYS_MALLOC_LEN		(256 << 10)	/* heap  256KB */
 
 /* Linux boot param area in RAM (used only when booting linux) */
@@ -110,29 +109,14 @@
 /* U-Boot general configuration */
 /*==============================*/
 
-#undef	CONFIG_USE_IRQ			/* Keep it simple, poll only */
 #define CONFIG_BOARD_POSTCLK_INIT
-#define CONFIG_DISPLAY_CPUINFO
-#define CONFIG_DISPLAY_BOARDINFO
 #define CONFIG_MISC_INIT_R
 
 #define CONFIG_BOOTFILE			"uImage"
 	/* Console I/O Buffer Size  */
 #define CONFIG_SYS_CBSIZE		1024
-	/* Prt buf */
-#define CONFIG_SYS_PBSIZE		(CONFIG_SYS_CBSIZE + \
-					 sizeof(CONFIG_SYS_PROMPT) + 16)
-	/* max number of command args */
-#define CONFIG_SYS_MAXARGS		16
 	/* Boot Argument Buffer Size */
 #define CONFIG_SYS_BARGSIZE		CONFIG_SYS_CBSIZE
-
-/*=================*/
-/* U-Boot commands */
-/*=================*/
-
-#define CONFIG_CMD_DIAG
-#define CONFIG_CMD_SAVES
 
 /*==============================*/
 /* U-Boot autoboot configuration */
@@ -143,7 +127,6 @@
 #define CONFIG_AUTO_COMPLETE			/* Support tab autocompletion */
 #define CONFIG_CMDLINE_EDITING
 #define CONFIG_SYS_LONGHELP
-#define CONFIG_CRC32_VERIFY
 #define CONFIG_MX_CYCLIC
 #define CONFIG_SHOW_BOOT_PROGRESS
 
@@ -210,7 +193,6 @@
 /* Input clk to NS16550 (in Hz; the SYS_CLK_FREQ is in kHz) */
 #define CONFIG_SYS_NS16550_CLK		CONFIG_SYS_CLK_FREQ
 #define CONFIG_CONS_INDEX		1	/* use UART0 for console */
-#define CONFIG_BAUDRATE			115200	/* Default baud rate */
 #define CONFIG_SYS_BAUDRATE_TABLE	{ 9600, 19200, 38400, 57600, 115200 }
 
 /*======================*/
@@ -257,7 +239,6 @@
  * Put environment in top block (64kB)
  * Another option would be to put env. in 2nd param block offs 8KB, size 8KB
  */
-#define CONFIG_ENV_IS_IN_FLASH
 #define CONFIG_ENV_OFFSET    (CONFIG_SYS_FLASH_SIZE - CONFIG_SYS_FLASH_SECT_SZ)
 #define CONFIG_ENV_SIZE	     CONFIG_SYS_FLASH_SECT_SZ
 

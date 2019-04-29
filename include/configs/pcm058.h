@@ -11,12 +11,6 @@
 #include <config_distro_defaults.h>
 
 #ifdef CONFIG_SPL
-#define CONFIG_SPL_LIBCOMMON_SUPPORT
-#define CONFIG_SPL_YMODEM_SUPPORT
-#define CONFIG_SPL_MMC_SUPPORT
-#define CONFIG_SPL_DMA_SUPPORT
-#define CONFIG_SPL_SPI_SUPPORT
-#define CONFIG_SPL_SPI_FLASH_SUPPORT
 #define CONFIG_SPL_SPI_LOAD
 #define CONFIG_SYS_SPI_U_BOOT_OFFS	(64 * 1024)
 #include "imx6_spl.h"
@@ -30,13 +24,11 @@
 /* Serial */
 #define CONFIG_MXC_UART
 #define CONFIG_MXC_UART_BASE	       UART2_BASE
-#define CONFIG_CONSOLE_DEV		"ttymxc1"
+#define CONSOLE_DEV		"ttymxc1"
 
 #define PHYS_SDRAM_SIZE		(1u * 1024 * 1024 * 1024)
 
 /* Early setup */
-#define CONFIG_BOARD_EARLY_INIT_F
-#define CONFIG_BOARD_LATE_INIT
 #define CONFIG_DISPLAY_BOARDINFO_LATE
 
 
@@ -50,10 +42,6 @@
 #define CONFIG_FEC_XCV_TYPE		RGMII
 #define CONFIG_ETHPRIME			"FEC"
 #define CONFIG_FEC_MXC_PHYADDR		3
-
-#define CONFIG_PHYLIB
-#define CONFIG_PHY_MICREL
-#define CONFIG_PHY_KSZ9031
 
 /* SPI Flash */
 #define CONFIG_MXC_SPI
@@ -69,9 +57,7 @@
 #define CONFIG_SYS_I2C_SPEED		  100000
 
 #ifndef CONFIG_SPL_BUILD
-#define CONFIG_CMD_NAND
 /* Enable NAND support */
-#define CONFIG_CMD_NAND_TRIMFFS
 #define CONFIG_NAND_MXS
 #define CONFIG_SYS_MAX_NAND_DEVICE	1
 #define CONFIG_SYS_NAND_BASE		0x40000000
@@ -85,21 +71,8 @@
 #define CONFIG_APBH_DMA_BURST8
 
 /* Filesystem support */
-#define CONFIG_LZO
-#define CONFIG_CMD_UBIFS
-#define CONFIG_CMD_MTDPARTS
 #define CONFIG_MTD_PARTITIONS
 #define CONFIG_MTD_DEVICE
-#define MTDIDS_DEFAULT    "nand0=nand"
-#define MTDPARTS_DEFAULT  "mtdparts=nand:16m(uboot),1m(env),-(rootfs)"
-
-/* Various command support */
-#define CONFIG_CMD_BMODE         /* set eFUSE shadow for a boot dev and reset */
-#define CONFIG_CMD_HDMIDETECT    /* detect HDMI output device */
-#define CONFIG_CMD_GSC
-#define CONFIG_CMD_EECONFIG      /* Gateworks EEPROM config cmd */
-#define CONFIG_CMD_UBI
-#define CONFIG_RBTREE
 
 /* Physical Memory Map */
 #define CONFIG_NR_DRAM_BANKS           1
@@ -119,7 +92,6 @@
 #define CONFIG_SYS_FSL_USDHC_NUM	1
 
 /* Environment organization */
-#define CONFIG_ENV_IS_IN_SPI_FLASH
 #define CONFIG_ENV_SIZE                (16 * 1024)
 #define CONFIG_ENV_OFFSET		(1024 * SZ_1K)
 #define CONFIG_ENV_SECT_SIZE		(64 * SZ_1K)

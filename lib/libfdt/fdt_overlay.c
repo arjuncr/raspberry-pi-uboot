@@ -21,26 +21,27 @@
  */
 static uint32_t overlay_get_target_phandle(const void *fdto, int fragment)
 {
-	const uint32_t *val;
+	const fdt32_t *val;
 	int len;
 
 	val = fdt_getprop(fdto, fragment, "target", &len);
 	if (!val)
 		return 0;
 
-	if ((*val == (uint32_t)-1) || (len != sizeof(*val)))
+	if ((len != sizeof(*val)) || (fdt32_to_cpu(*val) == (uint32_t)-1))
 		return (uint32_t)-1;
 
 	return fdt32_to_cpu(*val);
 }
 
 /**
- * overlay_get_target - retrieves the target phandle of a fragment
+ * overlay_get_target - retrieves the offset of a fragment's target
  * @fdt: Base device tree blob
  * @fdto: Device tree overlay blob
  * @fragment: node offset of the fragment in the overlay
+ * @pathp: pointer which receives the path of the target (or NULL)
  *
- * overlay_get_target() retrieves the target phandle in the base
+ * overlay_get_target() retrieves the target offset in the base
  * device tree of a fragment, no matter how the actual targetting is
  * done (through a phandle or a path)
  *
@@ -49,25 +50,47 @@ static uint32_t overlay_get_target_phandle(const void *fdto, int fragment)
  *      Negative error code on error
  */
 static int overlay_get_target(const void *fdt, const void *fdto,
-			      int fragment)
+			      int fragment, char const **pathp)
 {
 	uint32_t phandle;
-	const char *path;
+	const char *path = NULL;
+	int path_len = 0, ret;
 
 	/* Try first to do a phandle based lookup */
 	phandle = overlay_get_target_phandle(fdto, fragment);
 	if (phandle == (uint32_t)-1)
 		return -FDT_ERR_BADPHANDLE;
 
-	if (phandle)
-		return fdt_node_offset_by_phandle(fdt, phandle);
+	/* no phandle, try path */
+	if (!phandle) {
+		/* And then a path based lookup */
+		path = fdt_getprop(fdto, fragment, "target-path", &path_len);
+		if (path)
+			ret = fdt_path_offset(fdt, path);
+		else
+			ret = path_len;
+	} else
+		ret = fdt_node_offset_by_phandle(fdt, phandle);
 
-	/* And then a path based lookup */
-	path = fdt_getprop(fdto, fragment, "target-path", NULL);
-	if (!path)
-		return -FDT_ERR_NOTFOUND;
+	/*
+	* If we haven't found either a target or a
+	* target-path property in a node that contains a
+	* __overlay__ subnode (we wouldn't be called
+	* otherwise), consider it a improperly written
+	* overlay
+	*/
+	if (ret < 0 && path_len == -FDT_ERR_NOTFOUND)
+		ret = -FDT_ERR_BADOVERLAY;
 
-	return fdt_path_offset(fdt, path);
+	/* return on error */
+	if (ret < 0)
+		return ret;
+
+	/* return pointer to path (if available) */
+	if (pathp)
+		*pathp = path ? path : NULL;
+
+	return ret;
 }
 
 /**
@@ -87,7 +110,7 @@ static int overlay_get_target(const void *fdt, const void *fdto,
 static int overlay_phandle_add_offset(void *fdt, int node,
 				      const char *name, uint32_t delta)
 {
-	const uint32_t *val;
+	const fdt32_t *val;
 	uint32_t adj_val;
 	int len;
 
@@ -96,13 +119,16 @@ static int overlay_phandle_add_offset(void *fdt, int node,
 		return len;
 
 	if (len != sizeof(*val))
-		return -FDT_ERR_BADSTRUCTURE;
+		return -FDT_ERR_BADPHANDLE;
 
 	adj_val = fdt32_to_cpu(*val);
 	if ((adj_val + delta) < adj_val)
-		return -FDT_ERR_BADPHANDLE;
+		return -FDT_ERR_NOPHANDLES;
 
 	adj_val += delta;
+	if (adj_val == (uint32_t)-1)
+		return -FDT_ERR_NOPHANDLES;
+
 	return fdt_setprop_inplace_u32(fdt, node, name, adj_val);
 }
 
@@ -124,7 +150,6 @@ static int overlay_phandle_add_offset(void *fdt, int node,
 static int overlay_adjust_node_phandles(void *fdto, int node,
 					uint32_t delta)
 {
-	bool found = false;
 	int child;
 	int ret;
 
@@ -132,22 +157,15 @@ static int overlay_adjust_node_phandles(void *fdto, int node,
 	if (ret && ret != -FDT_ERR_NOTFOUND)
 		return ret;
 
-	if (!ret)
-		found = true;
-
 	ret = overlay_phandle_add_offset(fdto, node, "linux,phandle", delta);
 	if (ret && ret != -FDT_ERR_NOTFOUND)
 		return ret;
 
-	/*
-	 * If neither phandle nor linux,phandle have been found return
-	 * an error.
-	 */
-	if (!found && !ret)
-		return ret;
-
-	fdt_for_each_subnode(fdto, child, node)
-		overlay_adjust_node_phandles(fdto, child, delta);
+	fdt_for_each_subnode(child, fdto, node) {
+		ret = overlay_adjust_node_phandles(fdto, child, delta);
+		if (ret)
+			return ret;
+	}
 
 	return 0;
 }
@@ -203,7 +221,8 @@ static int overlay_update_local_node_references(void *fdto,
 	int ret;
 
 	fdt_for_each_property_offset(fixup_prop, fdto, fixup_node) {
-		const unsigned char *fixup_val, *tree_val;
+		const fdt32_t *fixup_val;
+		const char *tree_val;
 		const char *name;
 		int fixup_len;
 		int tree_len;
@@ -214,15 +233,22 @@ static int overlay_update_local_node_references(void *fdto,
 		if (!fixup_val)
 			return fixup_len;
 
+		if (fixup_len % sizeof(uint32_t))
+			return -FDT_ERR_BADOVERLAY;
+
 		tree_val = fdt_getprop(fdto, tree_node, name, &tree_len);
-		if (!tree_val)
+		if (!tree_val) {
+			if (tree_len == -FDT_ERR_NOTFOUND)
+				return -FDT_ERR_BADOVERLAY;
+
 			return tree_len;
+		}
 
-		for (i = 0; i < fixup_len; i += sizeof(uint32_t)) {
-			uint32_t adj_val, index;
+		for (i = 0; i < (fixup_len / sizeof(uint32_t)); i++) {
+			fdt32_t adj_val;
+			uint32_t poffset;
 
-			index = *(uint32_t *)(fixup_val + i);
-			index = fdt32_to_cpu(index);
+			poffset = fdt32_to_cpu(fixup_val[i]);
 
 			/*
 			 * phandles to fixup can be unaligned.
@@ -230,31 +256,34 @@ static int overlay_update_local_node_references(void *fdto,
 			 * Use a memcpy for the architectures that do
 			 * not support unaligned accesses.
 			 */
-			memcpy(&adj_val, tree_val + index, sizeof(uint32_t));
+			memcpy(&adj_val, tree_val + poffset, sizeof(adj_val));
 
-			adj_val = fdt32_to_cpu(adj_val);
-			adj_val += delta;
-			adj_val = cpu_to_fdt32(adj_val);
+			adj_val = cpu_to_fdt32(fdt32_to_cpu(adj_val) + delta);
 
 			ret = fdt_setprop_inplace_namelen_partial(fdto,
 								  tree_node,
 								  name,
 								  strlen(name),
-								  index,
+								  poffset,
 								  &adj_val,
 								  sizeof(adj_val));
+			if (ret == -FDT_ERR_NOSPACE)
+				return -FDT_ERR_BADOVERLAY;
+
 			if (ret)
 				return ret;
 		}
 	}
 
-	fdt_for_each_subnode(fdto, fixup_child, fixup_node) {
+	fdt_for_each_subnode(fixup_child, fdto, fixup_node) {
 		const char *fixup_child_name = fdt_get_name(fdto, fixup_child,
 							    NULL);
 		int tree_child;
 
 		tree_child = fdt_subnode_offset(fdto, tree_node,
 						fixup_child_name);
+		if (tree_child == -FDT_ERR_NOTFOUND)
+			return -FDT_ERR_BADOVERLAY;
 		if (tree_child < 0)
 			return tree_child;
 
@@ -315,7 +344,7 @@ static int overlay_update_local_references(void *fdto, uint32_t delta)
  * @path_len: number of path characters to consider
  * @name: Name of the property holding the phandle reference in the overlay
  * @name_len: number of name characters to consider
- * @index: Index in the overlay property where the phandle is stored
+ * @poffset: Offset within the overlay property where the phandle is stored
  * @label: Label of the node referenced by the phandle
  *
  * overlay_fixup_one_phandle() resolves an overlay phandle pointing to
@@ -333,17 +362,21 @@ static int overlay_fixup_one_phandle(void *fdt, void *fdto,
 				     int symbols_off,
 				     const char *path, uint32_t path_len,
 				     const char *name, uint32_t name_len,
-				     int index, const char *label)
+				     int poffset, const char *label)
 {
 	const char *symbol_path;
 	uint32_t phandle;
+	fdt32_t phandle_prop;
 	int symbol_off, fixup_off;
 	int prop_len;
+
+	if (symbols_off < 0)
+		return symbols_off;
 
 	symbol_path = fdt_getprop(fdt, symbols_off, label,
 				  &prop_len);
 	if (!symbol_path)
-		return -FDT_ERR_NOTFOUND;
+		return prop_len;
 
 	symbol_off = fdt_path_offset(fdt, symbol_path);
 	if (symbol_off < 0)
@@ -354,13 +387,16 @@ static int overlay_fixup_one_phandle(void *fdt, void *fdto,
 		return -FDT_ERR_NOTFOUND;
 
 	fixup_off = fdt_path_offset_namelen(fdto, path, path_len);
+	if (fixup_off == -FDT_ERR_NOTFOUND)
+		return -FDT_ERR_BADOVERLAY;
 	if (fixup_off < 0)
 		return fixup_off;
 
-	phandle = cpu_to_fdt32(phandle);
+	phandle_prop = cpu_to_fdt32(phandle);
 	return fdt_setprop_inplace_namelen_partial(fdto, fixup_off,
-						   name, name_len, index,
-						   &phandle, sizeof(phandle));
+						   name, name_len, poffset,
+						   &phandle_prop,
+						   sizeof(phandle_prop));
 };
 
 /**
@@ -371,8 +407,8 @@ static int overlay_fixup_one_phandle(void *fdt, void *fdto,
  * @property: Property offset in the overlay holding the list of fixups
  *
  * overlay_fixup_phandle() resolves all the overlay phandles pointed
- * to in a __local_fixup__ property, and updates them to match the
- * phandles in use in the base device tree.
+ * to in a __fixups__ property, and updates them to match the phandles
+ * in use in the base device tree.
  *
  * This is part of the device tree overlay application process, when
  * you want all the phandles in the overlay to point to the actual
@@ -391,40 +427,55 @@ static int overlay_fixup_phandle(void *fdt, void *fdto, int symbols_off,
 
 	value = fdt_getprop_by_offset(fdto, property,
 				      &label, &len);
-	if (!value)
+	if (!value) {
+		if (len == -FDT_ERR_NOTFOUND)
+			return -FDT_ERR_INTERNAL;
+
 		return len;
+	}
 
 	do {
-		const char *prop_string = value;
-		const char *path, *name;
-		uint32_t prop_len = strlen(value);
+		const char *path, *name, *fixup_end;
+		const char *fixup_str = value;
 		uint32_t path_len, name_len;
+		uint32_t fixup_len;
 		char *sep, *endptr;
-		int index;
-		int ret;
+		int poffset, ret;
 
-		path = prop_string;
-		sep = memchr(prop_string, ':', prop_len);
-		if (*sep != ':')
-			return -FDT_ERR_BADSTRUCTURE;
+		fixup_end = memchr(value, '\0', len);
+		if (!fixup_end)
+			return -FDT_ERR_BADOVERLAY;
+		fixup_len = fixup_end - fixup_str;
+
+		len -= fixup_len + 1;
+		value += fixup_len + 1;
+
+		path = fixup_str;
+		sep = memchr(fixup_str, ':', fixup_len);
+		if (!sep || *sep != ':')
+			return -FDT_ERR_BADOVERLAY;
+
 		path_len = sep - path;
+		if (path_len == (fixup_len - 1))
+			return -FDT_ERR_BADOVERLAY;
 
+		fixup_len -= path_len + 1;
 		name = sep + 1;
-		sep = memchr(name, ':', prop_len);
-		if (*sep != ':')
-			return -FDT_ERR_BADSTRUCTURE;
+		sep = memchr(name, ':', fixup_len);
+		if (!sep || *sep != ':')
+			return -FDT_ERR_BADOVERLAY;
+
 		name_len = sep - name;
+		if (!name_len)
+			return -FDT_ERR_BADOVERLAY;
 
-		index = strtoul(sep + 1, &endptr, 10);
+		poffset = strtoul(sep + 1, &endptr, 10);
 		if ((*endptr != '\0') || (endptr <= (sep + 1)))
-			return -FDT_ERR_BADSTRUCTURE;
-
-		len -= prop_len + 1;
-		value += prop_len + 1;
+			return -FDT_ERR_BADOVERLAY;
 
 		ret = overlay_fixup_one_phandle(fdt, fdto, symbols_off,
 						path, path_len, name, name_len,
-						index, label);
+						poffset, label);
 		if (ret)
 			return ret;
 	} while (len > 0);
@@ -454,8 +505,17 @@ static int overlay_fixup_phandles(void *fdt, void *fdto)
 	int fixups_off, symbols_off;
 	int property;
 
-	symbols_off = fdt_path_offset(fdt, "/__symbols__");
+	/* We can have overlays without any fixups */
 	fixups_off = fdt_path_offset(fdto, "/__fixups__");
+	if (fixups_off == -FDT_ERR_NOTFOUND)
+		return 0; /* nothing to do */
+	if (fixups_off < 0)
+		return fixups_off;
+
+	/* And base DTs without symbols */
+	symbols_off = fdt_path_offset(fdt, "/__symbols__");
+	if ((symbols_off < 0 && (symbols_off != -FDT_ERR_NOTFOUND)))
+		return symbols_off;
 
 	fdt_for_each_property_offset(property, fdto, fixups_off) {
 		int ret;
@@ -469,14 +529,14 @@ static int overlay_fixup_phandles(void *fdt, void *fdto)
 }
 
 /**
- * overlay_apply_node - Merge an overlay fragment into the base device tree
+ * overlay_apply_node - Merges a node into the base device tree
  * @fdt: Base Device Tree blob
  * @target: Node offset in the base device tree to apply the fragment to
  * @fdto: Device tree overlay blob
- * @fragment: Node offset in the overlay holding the changes to merge
+ * @node: Node offset in the overlay holding the changes to merge
  *
- * overlay_apply_node() merges an overlay fragment into a target base
- * device tree node pointed.
+ * overlay_apply_node() merges a node into a target base device tree
+ * node pointed.
  *
  * This is part of the final step in the device tree overlay
  * application process, when all the phandles have been adjusted and
@@ -488,12 +548,12 @@ static int overlay_fixup_phandles(void *fdt, void *fdto)
  *      Negative error code on failure
  */
 static int overlay_apply_node(void *fdt, int target,
-			      void *fdto, int fragment)
+			      void *fdto, int node)
 {
 	int property;
-	int node;
+	int subnode;
 
-	fdt_for_each_property_offset(property, fdto, fragment) {
+	fdt_for_each_property_offset(property, fdto, node) {
 		const char *name;
 		const void *prop;
 		int prop_len;
@@ -511,19 +571,22 @@ static int overlay_apply_node(void *fdt, int target,
 			return ret;
 	}
 
-	fdt_for_each_subnode(fdto, node, fragment) {
-		const char *name = fdt_get_name(fdto, node, NULL);
+	fdt_for_each_subnode(subnode, fdto, node) {
+		const char *name = fdt_get_name(fdto, subnode, NULL);
 		int nnode;
 		int ret;
 
 		nnode = fdt_add_subnode(fdt, target, name);
-		if (nnode == -FDT_ERR_EXISTS)
+		if (nnode == -FDT_ERR_EXISTS) {
 			nnode = fdt_subnode_offset(fdt, target, name);
+			if (nnode == -FDT_ERR_NOTFOUND)
+				return -FDT_ERR_INTERNAL;
+		}
 
 		if (nnode < 0)
 			return nnode;
 
-		ret = overlay_apply_node(fdt, nnode, fdto, node);
+		ret = overlay_apply_node(fdt, nnode, fdto, subnode);
 		if (ret)
 			return ret;
 	}
@@ -538,7 +601,7 @@ static int overlay_apply_node(void *fdt, int target,
  *
  * overlay_merge() merges an overlay into its base device tree.
  *
- * This is the final step in the device tree overlay application
+ * This is the next to last step in the device tree overlay application
  * process, when all the phandles have been adjusted and resolved and
  * you just have to merge overlay into the base device tree.
  *
@@ -546,24 +609,31 @@ static int overlay_apply_node(void *fdt, int target,
  *      0 on success
  *      Negative error code on failure
  */
-static int overlay_merge(void *dt, void *dto)
+static int overlay_merge(void *fdt, void *fdto)
 {
 	int fragment;
 
-	fdt_for_each_subnode(dto, fragment, 0) {
+	fdt_for_each_subnode(fragment, fdto, 0) {
 		int overlay;
 		int target;
 		int ret;
 
-		target = overlay_get_target(dt, dto, fragment);
-		if (target < 0)
+		/*
+		 * Each fragments will have an __overlay__ node. If
+		 * they don't, it's not supposed to be merged
+		 */
+		overlay = fdt_subnode_offset(fdto, fragment, "__overlay__");
+		if (overlay == -FDT_ERR_NOTFOUND)
 			continue;
 
-		overlay = fdt_subnode_offset(dto, fragment, "__overlay__");
 		if (overlay < 0)
 			return overlay;
 
-		ret = overlay_apply_node(dt, target, dto, overlay);
+		target = overlay_get_target(fdt, fdto, fragment, NULL);
+		if (target < 0)
+			return target;
+
+		ret = overlay_apply_node(fdt, target, fdto, overlay);
 		if (ret)
 			return ret;
 	}
@@ -571,9 +641,178 @@ static int overlay_merge(void *dt, void *dto)
 	return 0;
 }
 
+static int get_path_len(const void *fdt, int nodeoffset)
+{
+	int len = 0, namelen;
+	const char *name;
+
+	FDT_CHECK_HEADER(fdt);
+
+	for (;;) {
+		name = fdt_get_name(fdt, nodeoffset, &namelen);
+		if (!name)
+			return namelen;
+
+		/* root? we're done */
+		if (namelen == 0)
+			break;
+
+		nodeoffset = fdt_parent_offset(fdt, nodeoffset);
+		if (nodeoffset < 0)
+			return nodeoffset;
+		len += namelen + 1;
+	}
+
+	/* in case of root pretend it's "/" */
+	if (len == 0)
+		len++;
+	return len;
+}
+
+/**
+ * overlay_symbol_update - Update the symbols of base tree after a merge
+ * @fdt: Base Device Tree blob
+ * @fdto: Device tree overlay blob
+ *
+ * overlay_symbol_update() updates the symbols of the base tree with the
+ * symbols of the applied overlay
+ *
+ * This is the last step in the device tree overlay application
+ * process, allowing the reference of overlay symbols by subsequent
+ * overlay operations.
+ *
+ * returns:
+ *      0 on success
+ *      Negative error code on failure
+ */
+static int overlay_symbol_update(void *fdt, void *fdto)
+{
+	int root_sym, ov_sym, prop, path_len, fragment, target;
+	int len, frag_name_len, ret, rel_path_len;
+	const char *s, *e;
+	const char *path;
+	const char *name;
+	const char *frag_name;
+	const char *rel_path;
+	const char *target_path;
+	char *buf;
+	void *p;
+
+	ov_sym = fdt_subnode_offset(fdto, 0, "__symbols__");
+
+	/* if no overlay symbols exist no problem */
+	if (ov_sym < 0)
+		return 0;
+
+	root_sym = fdt_subnode_offset(fdt, 0, "__symbols__");
+
+	/* it no root symbols exist we should create them */
+	if (root_sym == -FDT_ERR_NOTFOUND)
+		root_sym = fdt_add_subnode(fdt, 0, "__symbols__");
+
+	/* any error is fatal now */
+	if (root_sym < 0)
+		return root_sym;
+
+	/* iterate over each overlay symbol */
+	fdt_for_each_property_offset(prop, fdto, ov_sym) {
+		path = fdt_getprop_by_offset(fdto, prop, &name, &path_len);
+		if (!path)
+			return path_len;
+
+		/* verify it's a string property (terminated by a single \0) */
+		if (path_len < 1 || memchr(path, '\0', path_len) != &path[path_len - 1])
+			return -FDT_ERR_BADVALUE;
+
+		/* keep end marker to avoid strlen() */
+		e = path + path_len;
+
+		/* format: /<fragment-name>/__overlay__/<relative-subnode-path> */
+
+		if (*path != '/')
+			return -FDT_ERR_BADVALUE;
+
+		/* get fragment name first */
+		s = strchr(path + 1, '/');
+		if (!s)
+			return -FDT_ERR_BADOVERLAY;
+
+		frag_name = path + 1;
+		frag_name_len = s - path - 1;
+
+		/* verify format; safe since "s" lies in \0 terminated prop */
+		len = sizeof("/__overlay__/") - 1;
+		if ((e - s) < len || memcmp(s, "/__overlay__/", len))
+			return -FDT_ERR_BADOVERLAY;
+
+		rel_path = s + len;
+		rel_path_len = e - rel_path;
+
+		/* find the fragment index in which the symbol lies */
+		ret = fdt_subnode_offset_namelen(fdto, 0, frag_name,
+					       frag_name_len);
+		/* not found? */
+		if (ret < 0)
+			return -FDT_ERR_BADOVERLAY;
+		fragment = ret;
+
+		/* an __overlay__ subnode must exist */
+		ret = fdt_subnode_offset(fdto, fragment, "__overlay__");
+		if (ret < 0)
+			return -FDT_ERR_BADOVERLAY;
+
+		/* get the target of the fragment */
+		ret = overlay_get_target(fdt, fdto, fragment, &target_path);
+		if (ret < 0)
+			return ret;
+		target = ret;
+
+		/* if we have a target path use */
+		if (!target_path) {
+			ret = get_path_len(fdt, target);
+			if (ret < 0)
+				return ret;
+			len = ret;
+		} else {
+			len = strlen(target_path);
+		}
+
+		ret = fdt_setprop_placeholder(fdt, root_sym, name,
+				len + (len > 1) + rel_path_len + 1, &p);
+		if (ret < 0)
+			return ret;
+
+		if (!target_path) {
+			/* again in case setprop_placeholder changed it */
+			ret = overlay_get_target(fdt, fdto, fragment, &target_path);
+			if (ret < 0)
+				return ret;
+			target = ret;
+		}
+
+		buf = p;
+		if (len > 1) { /* target is not root */
+			if (!target_path) {
+				ret = fdt_get_path(fdt, target, buf, len + 1);
+				if (ret < 0)
+					return ret;
+			} else
+				memcpy(buf, target_path, len + 1);
+
+		} else
+			len--;
+
+		buf[len] = '/';
+		memcpy(buf + len + 1, rel_path, rel_path_len);
+		buf[len + 1 + rel_path_len] = '\0';
+	}
+
+	return 0;
+}
+
 int fdt_overlay_apply(void *fdt, void *fdto)
 {
-	uint32_t delta = fdt_get_max_phandle(fdt) + 1;
+	uint32_t delta = fdt_get_max_phandle(fdt);
 	int ret;
 
 	FDT_CHECK_HEADER(fdt);
@@ -592,6 +831,10 @@ int fdt_overlay_apply(void *fdt, void *fdto)
 		goto err;
 
 	ret = overlay_merge(fdt, fdto);
+	if (ret)
+		goto err;
+
+	ret = overlay_symbol_update(fdt, fdto);
 	if (ret)
 		goto err;
 

@@ -44,7 +44,7 @@
 #include <linux/mtd/partitions.h>
 #endif
 #include <asm/io.h>
-#include <asm/errno.h>
+#include <linux/errno.h>
 
 /* Define default oob placement schemes for large and small page devices */
 static struct nand_ecclayout nand_oob_8 = {
@@ -241,7 +241,6 @@ static void nand_write_byte16(struct mtd_info *mtd, uint8_t byte)
 	chip->write_buf(mtd, (uint8_t *)&word, 2);
 }
 
-#if !defined(CONFIG_BLACKFIN)
 static void iowrite8_rep(void *addr, const uint8_t *buf, int len)
 {
 	int i;
@@ -274,7 +273,6 @@ static void iowrite16_rep(void *addr, void *buf, int len)
         for (i = 0; i < len; i++)
                 writew(p[i], addr);
 }
-#endif
 
 /**
  * nand_write_buf - [DEFAULT] write buffer to chip
@@ -653,6 +651,8 @@ static void nand_command(struct mtd_info *mtd, unsigned int command,
 	case NAND_CMD_ERASE2:
 	case NAND_CMD_SEQIN:
 	case NAND_CMD_STATUS:
+	case NAND_CMD_READID:
+	case NAND_CMD_SET_FEATURES:
 		return;
 
 	case NAND_CMD_RESET:
@@ -750,6 +750,8 @@ static void nand_command_lp(struct mtd_info *mtd, unsigned int command,
 	case NAND_CMD_SEQIN:
 	case NAND_CMD_RNDIN:
 	case NAND_CMD_STATUS:
+	case NAND_CMD_READID:
+	case NAND_CMD_SET_FEATURES:
 		return;
 
 	case NAND_CMD_RESET:
